@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de solución nutritiva</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --agua:#06222b;
+    --panel:#0d3441;
+    --linea:#1b4c5c;
+    --tinta:#e8f4f1;
+    --tenue:#8fb3b8;
+    --musgo:#79d6ac;
+    --ambar:#f0b429;
+    --coral:#e4674a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--agua);
+    color:var(--tinta);
+    font-family:Inter,system-ui,sans-serif;
+    line-height:1.55;
+    padding:2rem 1.25rem 4rem;
+  }
+  .envoltura{max-width:60rem;margin:0 auto}
+
+  header{
+    display:flex;flex-wrap:wrap;gap:1rem;
+    align-items:flex-end;justify-content:space-between;
+    padding-bottom:1.25rem;border-bottom:1px solid var(--linea);
+  }
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:1.6rem;letter-spacing:-.02em;margin:0}
+  header p{margin:.2rem 0 0;color:var(--tenue);font-size:.9rem}
+
+  .estado{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--tenue)}
+  .punto{width:.55rem;height:.55rem;border-radius:50%;background:var(--tenue)}
+  .punto.viva{background:var(--musgo)}
+  .punto.dormida{background:var(--ambar)}
+  .punto.caida{background:var(--coral)}
+
+  .lecturas{
+    display:grid;gap:1px;background:var(--linea);
+    border:1px solid var(--linea);margin:2rem 0;
+    grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));
+  }
+  .lectura{background:var(--panel);padding:1.5rem 1.4rem}
+  .lectura h2{margin:0;font-size:.9rem;font-weight:500;color:var(--tenue)}
+  .valor{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:3.4rem;font-weight:500;line-height:1;
+    letter-spacing:-.03em;margin:.6rem 0 .1rem;
+    font-variant-numeric:tabular-nums;
+  }
+  .valor span{font-size:1.1rem;color:var(--tenue);margin-left:.25rem}
+  .juicio{font-size:.85rem;margin:.5rem 0 0;min-height:1.3em}
+  .juicio.ok{color:var(--musgo)}
+  .juicio.alerta{color:var(--ambar)}
+  .juicio.mala{color:var(--coral)}
+
+  .barra{position:relative;height:.4rem;background:#0a2b36;margin-top:1rem}
+  .banda{position:absolute;top:0;bottom:0;background:rgba(121,214,172,.28)}
+  .aguja{position:absolute;top:-.25rem;bottom:-.25rem;width:2px;background:var(--tinta);transition:left .4s ease}
+  .limites{display:flex;justify-content:space-between;font-size:.72rem;color:var(--tenue);margin-top:.35rem}
+
+  .aviso{border:1px solid var(--linea);padding:1rem 1.25rem;color:var(--ambar);font-size:.9rem}
+  code{background:#0a2b36;padding:.1rem .35rem;font-size:.85em}
+  footer{color:var(--tenue);font-size:.8rem;margin-top:2rem}
+  @media (prefers-reduced-motion:reduce){.aguja{transition:none}}
+</style>
+</head>
+<body>
+<div class="envoltura">
+
+  <header>
+    <div>
+      <h1>Monitor de solución nutritiva</h1>
+      <p>Lecturas en vivo del ESP32</p>
+    </div>
+    <div class="estado">
+      <span class="punto" id="punto"></span>
+      <span id="estadoTexto">Conectando…</span>
+    </div>
+  </header>
+
+  <section class="lecturas" id="lecturas"></section>
+
+  <p class="aviso" id="aviso" hidden></p>
+
+  <footer id="ultima">Todavía sin datos</footer>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
+import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
+
+// ---------- Configuración ----------
+// Consola de Firebase > Configuración del proyecto > Tus apps (Web).
+// Estas claves son públicas por diseño; quien protege los datos son las reglas.
+const firebaseConfig = {
+  apiKey: "AIzaSyCPHry-11IMeVdOSM-z721briWJJlrZQN4",
+  authDomain: "tp21-6f88d.firebaseapp.com",
+  databaseURL: "https://tp21-6f88d-default-rtdb.firebaseio.com",
+  projectId: "tp21-6f88d",
+  appId: "1:340252212955:web:a5e091f631ea1887e056fe"
+};
+
+const RUTA = 'cultivo/actual';
+const SIN_SENAL = 120000; // si la última lectura tiene más de 2 min, el equipo está caído
+
+const SENSORES = [
+  { clave:'ph',   titulo:'pH',            unidad:'',      decimales:2, min:3,  max:9,   sanoMin:5.5, sanoMax:6.5 },
+  { clave:'ec',   titulo:'Conductividad', unidad:'mS/cm', decimales:2, min:0,  max:3.5, sanoMin:1.2, sanoMax:2.2 },
+  { clave:'temp', titulo:'Temperatura',   unidad:'°C',    decimales:1, min:10, max:35,  sanoMin:18,  sanoMax:26 }
+];
+
+// ---------- Interfaz ----------
+const pct = (s, v) => Math.max(0, Math.min(100, ((v - s.min) / (s.max - s.min)) * 100));
+
+document.getElementById('lecturas').innerHTML = SENSORES.map(s => `
+  <article class="lectura">
+    <h2>${s.titulo}</h2>
+    <p class="valor"><span data-valor="${s.clave}">—</span><span>${s.unidad}</span></p>
+    <div class="barra">
+      <div class="banda" style="left:${pct(s,s.sanoMin)}%;width:${pct(s,s.sanoMax)-pct(s,s.sanoMin)}%"></div>
+      <div class="aguja" data-aguja="${s.clave}" style="left:0;visibility:hidden"></div>
+    </div>
+    <div class="limites"><span>${s.min}</span><span>${s.max}</span></div>
+    <p class="juicio" data-juicio="${s.clave}"></p>
+  </article>
+`).join('');
+
+function pintar(datos){
+  for (const s of SENSORES){
+    const v = Number(datos?.[s.clave]);
+    const celda  = document.querySelector(`[data-valor="${s.clave}"]`);
+    const aguja  = document.querySelector(`[data-aguja="${s.clave}"]`);
+    const juicio = document.querySelector(`[data-juicio="${s.clave}"]`);
+
+    if (!Number.isFinite(v)){
+      celda.textContent = '—'; aguja.style.visibility = 'hidden'; juicio.textContent = '';
+      continue;
+    }
+
+    celda.textContent = v.toFixed(s.decimales);
+    aguja.style.left = pct(s, v) + '%';
+    aguja.style.visibility = 'visible';
+
+    if (s.clave === 'temp' && datos.tempOk === false){
+      juicio.className = 'juicio alerta';
+      juicio.textContent = 'El DHT22 no responde: valor por defecto';
+      continue;
+    }
+
+    const margen = (s.sanoMax - s.sanoMin) * 0.5;
+    if (v >= s.sanoMin && v <= s.sanoMax){
+      juicio.className = 'juicio ok';
+      juicio.textContent = `Dentro del rango ${s.sanoMin}–${s.sanoMax}`;
+    } else if (v >= s.sanoMin - margen && v <= s.sanoMax + margen){
+      juicio.className = 'juicio alerta';
+      juicio.textContent = v < s.sanoMin ? 'Un poco bajo' : 'Un poco alto';
+    } else {
+      juicio.className = 'juicio mala';
+      juicio.textContent = v < s.sanoMin ? 'Muy por debajo del rango' : 'Muy por encima del rango';
+    }
+  }
+}
+
+function marcarEstado(clase, texto){
+  document.getElementById('punto').className = 'punto ' + clase;
+  document.getElementById('estadoTexto').textContent = texto;
+}
+
+function mostrarAviso(texto){
+  const aviso = document.getElementById('aviso');
+  aviso.hidden = !texto;
+  aviso.textContent = texto || '';
+}
+
+let ultimoTs = 0;
+function refrescarAntiguedad(){
+  if (!ultimoTs) return;
+  const edad = Date.now() - ultimoTs;
+  const hora = new Date(ultimoTs).toLocaleTimeString('es-CL');
+  document.getElementById('ultima').textContent = `Última lectura a las ${hora}`;
+
+  if (edad > SIN_SENAL){
+    const minutos = Math.round(edad / 60000);
+    marcarEstado('dormida', `Sin datos nuevos hace ${minutos} min`);
+  } else {
+    marcarEstado('viva', 'Recibiendo datos');
+  }
+}
+setInterval(refrescarAntiguedad, 10000);
+
+// ---------- Firebase ----------
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+try {
+  await signInAnonymously(getAuth(app));
+} catch (e) {
+  marcarEstado('caida', 'Sin acceso');
+  mostrarAviso('No se pudo iniciar sesión anónima. Habilita el proveedor "Anónimo" en Authentication > Sign-in method.');
+  throw e;
+}
+
+onValue(ref(db, RUTA),
+  instantanea => {
+    const datos = instantanea.val();
+    if (!datos){
+      marcarEstado('caida', 'Base vacía');
+      mostrarAviso(`No hay nada en /${RUTA}. Revisa que el ESP32 esté escribiendo.`);
+      return;
+    }
+    mostrarAviso('');
+    pintar(datos);
+    ultimoTs = datos.ts ?? Date.now();
+    refrescarAntiguedad();
+  },
+  error => {
+    marcarEstado('caida', 'Lectura rechazada');
+    mostrarAviso('La base rechazó la lectura: revisa las reglas de seguridad. ' + error.message);
+  }
+);
+</script>
+</body>
+</html>
