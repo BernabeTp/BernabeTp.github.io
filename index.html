@@ -67,6 +67,28 @@
   .aguja{position:absolute;top:-.25rem;bottom:-.25rem;width:2px;background:var(--tinta);transition:left .4s ease}
   .limites{display:flex;justify-content:space-between;font-size:.72rem;color:var(--tenue);margin-top:.35rem}
 
+  .control{border:1px solid var(--linea);padding:1.25rem 1.4rem;margin-bottom:2rem}
+  .control h2{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:500;margin:0 0 1rem}
+  .mandos{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))}
+  .mando{
+    display:flex;align-items:center;justify-content:space-between;gap:1rem;
+    background:var(--panel);border:1px solid var(--linea);padding:.8rem 1rem;
+  }
+  .mando .nombre{font-size:.95rem}
+  .mando .confirma{display:block;font-size:.72rem;color:var(--tenue);margin-top:.15rem}
+  .mando .confirma.si{color:var(--musgo)}
+  .interruptor{
+    position:relative;width:2.8rem;height:1.5rem;flex:none;
+    background:#0a2b36;border:1px solid var(--linea);cursor:pointer;
+  }
+  .interruptor::after{
+    content:'';position:absolute;top:.2rem;left:.2rem;
+    width:1rem;height:1rem;background:var(--tenue);transition:transform .2s,background .2s;
+  }
+  .interruptor[aria-checked="true"]{border-color:var(--musgo)}
+  .interruptor[aria-checked="true"]::after{transform:translateX(1.25rem);background:var(--musgo)}
+  .interruptor:disabled{opacity:.45;cursor:not-allowed}
+  .interruptor:focus-visible{outline:2px solid var(--musgo);outline-offset:2px}
   .aviso{border:1px solid var(--linea);padding:1rem 1.25rem;color:var(--ambar);font-size:.9rem}
   code{background:#0a2b36;padding:.1rem .35rem;font-size:.85em}
   footer{color:var(--tenue);font-size:.8rem;margin-top:2rem}
@@ -89,6 +111,11 @@
 
   <section class="lecturas" id="lecturas"></section>
 
+  <section class="control">
+    <h2>Actuadores</h2>
+    <div class="mandos" id="mandos"></div>
+  </section>
+
   <p class="aviso" id="aviso" hidden></p>
 
   <footer id="ultima">Todavía sin datos</footer>
@@ -97,7 +124,7 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
-import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
+import { getDatabase, ref, onValue, update } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
 
 // ---------- Configuración ----------
 // Consola de Firebase > Configuración del proyecto > Tus apps (Web).
@@ -105,7 +132,9 @@ import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/12
 const firebaseConfig = {
   apiKey: "AIzaSyDa0fTMGfNUCwrVBRXfpz9QZP5B-RMVYuA",
   authDomain: "tp21-27428.firebaseapp.com",
-  databaseURL: "https://tp21-27428-default-rtdb.firebaseio.com/",
+  // VERIFICA esta URL en la consola: si elegiste una region distinta de
+  // us-central1, el formato es https://tp21-27428-default-rtdb.<region>.firebasedatabase.app
+  databaseURL: "https://tp21-27428-default-rtdb.firebaseio.com",
   projectId: "tp21-27428",
   appId: "1:250329368925:web:98d43dfb2463c9991500b4"
 };
@@ -210,6 +239,51 @@ try {
   throw e;
 }
 
+// ---------- Actuadores ----------
+const ACTUADORES = [
+  { clave:'bomba',       titulo:'Bomba de agua' },
+  { clave:'extractor_1', titulo:'Extractor 1' },
+  { clave:'extractor_2', titulo:'Extractor 2' },
+  { clave:'rele_4',      titulo:'Reserva' }
+];
+
+document.getElementById('mandos').innerHTML = ACTUADORES.map(a => `
+  <div class="mando">
+    <span>
+      <span class="nombre">${a.titulo}</span>
+      <span class="confirma" data-confirma="${a.clave}">sin confirmar</span>
+    </span>
+    <button class="interruptor" data-mando="${a.clave}" role="switch"
+            aria-checked="false" aria-label="${a.titulo}" disabled></button>
+  </div>
+`).join('');
+
+document.querySelectorAll('[data-mando]').forEach(boton => {
+  boton.addEventListener('click', async () => {
+    const clave = boton.dataset.mando;
+    const nuevo = boton.getAttribute('aria-checked') !== 'true';
+    boton.setAttribute('aria-checked', String(nuevo));  // respuesta inmediata
+    try {
+      await update(ref(db, 'cultivo/control'), { [clave]: nuevo });
+    } catch (e) {
+      boton.setAttribute('aria-checked', String(!nuevo));
+      mostrarAviso('No se pudo enviar la orden: ' + e.message);
+    }
+  });
+});
+
+// Lo que la web ha pedido
+onValue(ref(db, 'cultivo/control'), instantanea => {
+  const ordenes = instantanea.val() || {};
+  for (const a of ACTUADORES){
+    const boton = document.querySelector(`[data-mando="${a.clave}"]`);
+    boton.disabled = false;
+    if (document.activeElement !== boton){
+      boton.setAttribute('aria-checked', String(ordenes[a.clave] === true));
+    }
+  }
+});
+
 onValue(ref(db, RUTA),
   instantanea => {
     const datos = instantanea.val();
@@ -220,6 +294,15 @@ onValue(ref(db, RUTA),
     }
     mostrarAviso('');
     pintar(datos);
+    // Lo que la placa dice que tiene puesto de verdad
+    for (const a of ACTUADORES){
+      const etiqueta = document.querySelector(`[data-confirma="${a.clave}"]`);
+      const real = datos.actuadores?.[a.clave];
+      etiqueta.textContent = real === undefined
+        ? 'sin confirmar'
+        : (real ? 'encendido en la placa' : 'apagado en la placa');
+      etiqueta.className = 'confirma' + (real ? ' si' : '');
+    }
     ultimoTs = datos.ts ?? Date.now();
     refrescarAntiguedad();
   },
