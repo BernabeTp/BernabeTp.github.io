@@ -43,6 +43,7 @@
   .punto.dormida{background:var(--ambar)}
   .punto.caida{background:var(--coral)}
 
+  /* --- Lecturas --- */
   .lecturas{
     display:grid;gap:1px;background:var(--linea);
     border:1px solid var(--linea);margin:2rem 0;
@@ -67,8 +68,10 @@
   .aguja{position:absolute;top:-.25rem;bottom:-.25rem;width:2px;background:var(--tinta);transition:left .4s ease}
   .limites{display:flex;justify-content:space-between;font-size:.72rem;color:var(--tenue);margin-top:.35rem}
 
+  /* --- Actuadores --- */
   .control{border:1px solid var(--linea);padding:1.25rem 1.4rem;margin-bottom:2rem}
-  .control h2{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:500;margin:0 0 1rem}
+  .control h2{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:500;margin:0 0 .3rem}
+  .control .nota{color:var(--tenue);font-size:.85rem;margin:0 0 1rem}
   .mandos{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))}
   .mando{
     display:flex;align-items:center;justify-content:space-between;gap:1rem;
@@ -87,12 +90,32 @@
   }
   .interruptor[aria-checked="true"]{border-color:var(--musgo)}
   .interruptor[aria-checked="true"]::after{transform:translateX(1.25rem);background:var(--musgo)}
-  .interruptor:disabled{opacity:.45;cursor:not-allowed}
-  .interruptor:focus-visible{outline:2px solid var(--musgo);outline-offset:2px}
+  .interruptor[hidden]{display:none}
+
+  /* --- Acceso --- */
+  .acceso{border:1px solid var(--linea);padding:1.5rem 1.4rem;margin-bottom:2rem}
+  .acceso h2{font-family:'Space Grotesk',sans-serif;font-size:1.05rem;font-weight:500;margin:0 0 .4rem}
+  .acceso p{margin:0 0 1rem;color:var(--tenue);font-size:.9rem}
+  .campo{display:flex;flex-wrap:wrap;gap:.6rem}
+  .campo input{
+    background:var(--agua);border:1px solid var(--linea);color:var(--tinta);
+    padding:.55rem .7rem;font:inherit;font-size:.9rem;flex:1 1 12rem;
+  }
+  .campo button{
+    background:var(--musgo);border:0;color:#06222b;
+    padding:.55rem 1.3rem;font:inherit;font-weight:500;cursor:pointer;
+  }
+  .campo button:hover{background:#95e5c1}
+  .errorLogin{color:var(--coral);font-size:.85rem;margin:.9rem 0 0}
+
   .aviso{border:1px solid var(--linea);padding:1rem 1.25rem;color:var(--ambar);font-size:.9rem}
-  code{background:#0a2b36;padding:.1rem .35rem;font-size:.85em}
-  footer{color:var(--tenue);font-size:.8rem;margin-top:2rem}
-  @media (prefers-reduced-motion:reduce){.aguja{transition:none}}
+  footer{color:var(--tenue);font-size:.8rem;margin-top:2rem;
+    display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between}
+  .enlace{background:none;border:0;color:var(--tenue);font:inherit;font-size:.8rem;
+    text-decoration:underline;cursor:pointer;padding:0}
+  .enlace:hover{color:var(--tinta)}
+  input:focus-visible,button:focus-visible{outline:2px solid var(--musgo);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.aguja,.interruptor::after{transition:none}}
 </style>
 </head>
 <body>
@@ -113,39 +136,57 @@
 
   <section class="control">
     <h2>Actuadores</h2>
+    <p class="nota" id="notaControl">Estado informado por la placa.</p>
     <div class="mandos" id="mandos"></div>
+  </section>
+
+  <section class="acceso" id="acceso" hidden>
+    <h2>Acceso de control</h2>
+    <p>Solo para operar los actuadores. Las lecturas se ven sin entrar.</p>
+    <div class="campo">
+      <input id="correo" type="email" placeholder="correo" autocomplete="username">
+      <input id="clave" type="password" placeholder="contraseña" autocomplete="current-password">
+      <button id="entrar">Entrar</button>
+    </div>
+    <p class="errorLogin" id="errorLogin" hidden></p>
   </section>
 
   <p class="aviso" id="aviso" hidden></p>
 
-  <footer id="ultima">Todavía sin datos</footer>
+  <footer>
+    <span id="ultima">Todavía sin datos</span>
+    <button id="sesion" class="enlace">Entrar</button>
+  </footer>
 </div>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import { getDatabase, ref, onValue, update } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js';
 
 // ---------- Configuración ----------
-// Consola de Firebase > Configuración del proyecto > Tus apps (Web).
-// Estas claves son públicas por diseño; quien protege los datos son las reglas.
 const firebaseConfig = {
   apiKey: "AIzaSyDa0fTMGfNUCwrVBRXfpz9QZP5B-RMVYuA",
   authDomain: "tp21-27428.firebaseapp.com",
-  // VERIFICA esta URL en la consola: si elegiste una region distinta de
-  // us-central1, el formato es https://tp21-27428-default-rtdb.<region>.firebasedatabase.app
   databaseURL: "https://tp21-27428-default-rtdb.firebaseio.com",
   projectId: "tp21-27428",
   appId: "1:250329368925:web:98d43dfb2463c9991500b4"
 };
 
 const RUTA = 'cultivo/actual';
-const SIN_SENAL = 120000; // si la última lectura tiene más de 2 min, el equipo está caído
+const SIN_SENAL = 120000;
 
 const SENSORES = [
   { clave:'ph',   titulo:'pH',            unidad:'',      decimales:2, min:3,  max:9,   sanoMin:5.5, sanoMax:6.5 },
   { clave:'ec',   titulo:'Conductividad', unidad:'mS/cm', decimales:2, min:0,  max:3.5, sanoMin:1.2, sanoMax:2.2 },
   { clave:'temp', titulo:'Temperatura',   unidad:'°C',    decimales:1, min:10, max:35,  sanoMin:18,  sanoMax:26 }
+];
+
+const ACTUADORES = [
+  { clave:'bomba',       titulo:'Bomba de agua' },
+  { clave:'extractor_1', titulo:'Extractor 1' },
+  { clave:'extractor_2', titulo:'Extractor 2' },
+  { clave:'rele_4',      titulo:'Reserva' }
 ];
 
 // ---------- Interfaz ----------
@@ -164,6 +205,17 @@ document.getElementById('lecturas').innerHTML = SENSORES.map(s => `
   </article>
 `).join('');
 
+document.getElementById('mandos').innerHTML = ACTUADORES.map(a => `
+  <div class="mando">
+    <span>
+      <span class="nombre">${a.titulo}</span>
+      <span class="confirma" data-confirma="${a.clave}">sin datos</span>
+    </span>
+    <button class="interruptor" data-mando="${a.clave}" role="switch"
+            aria-checked="false" aria-label="${a.titulo}" hidden></button>
+  </div>
+`).join('');
+
 function pintar(datos){
   for (const s of SENSORES){
     const v = Number(datos?.[s.clave]);
@@ -171,7 +223,7 @@ function pintar(datos){
     const aguja  = document.querySelector(`[data-aguja="${s.clave}"]`);
     const juicio = document.querySelector(`[data-juicio="${s.clave}"]`);
 
-    if (!Number.isFinite(v)){
+    if (!Number.isFinite(v) || v < 0){
       celda.textContent = '—'; aguja.style.visibility = 'hidden'; juicio.textContent = '';
       continue;
     }
@@ -200,6 +252,23 @@ function pintar(datos){
   }
 }
 
+function pintarActuadores(datos){
+  for (const a of ACTUADORES){
+    const etiqueta = document.querySelector(`[data-confirma="${a.clave}"]`);
+    const real = datos.actuadores?.[a.clave];
+    etiqueta.textContent = real === undefined
+      ? 'sin datos'
+      : (real ? 'encendido' : 'apagado');
+    etiqueta.className = 'confirma' + (real ? ' si' : '');
+
+    // Si no hay sesión, el interruptor está oculto y reflejamos el estado real.
+    const boton = document.querySelector(`[data-mando="${a.clave}"]`);
+    if (boton.hidden && real !== undefined){
+      boton.setAttribute('aria-checked', String(real === true));
+    }
+  }
+}
+
 function marcarEstado(clase, texto){
   document.getElementById('punto').className = 'punto ' + clase;
   document.getElementById('estadoTexto').textContent = texto;
@@ -215,12 +284,11 @@ let ultimoTs = 0;
 function refrescarAntiguedad(){
   if (!ultimoTs) return;
   const edad = Date.now() - ultimoTs;
-  const hora = new Date(ultimoTs).toLocaleTimeString('es-CL');
-  document.getElementById('ultima').textContent = `Última lectura a las ${hora}`;
+  document.getElementById('ultima').textContent =
+    'Última lectura a las ' + new Date(ultimoTs).toLocaleTimeString('es-CL');
 
   if (edad > SIN_SENAL){
-    const minutos = Math.round(edad / 60000);
-    marcarEstado('dormida', `Sin datos nuevos hace ${minutos} min`);
+    marcarEstado('dormida', `Sin datos nuevos hace ${Math.round(edad / 60000)} min`);
   } else {
     marcarEstado('viva', 'Recibiendo datos');
   }
@@ -228,62 +296,11 @@ function refrescarAntiguedad(){
 setInterval(refrescarAntiguedad, 10000);
 
 // ---------- Firebase ----------
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
+const auth = getAuth(app);
 
-try {
-  await signInAnonymously(getAuth(app));
-} catch (e) {
-  marcarEstado('caida', 'Sin acceso');
-  mostrarAviso('No se pudo iniciar sesión anónima. Habilita el proveedor "Anónimo" en Authentication > Sign-in method.');
-  throw e;
-}
-
-// ---------- Actuadores ----------
-const ACTUADORES = [
-  { clave:'bomba',       titulo:'Bomba de agua' },
-  { clave:'extractor_1', titulo:'Extractor 1' },
-  { clave:'extractor_2', titulo:'Extractor 2' },
-  { clave:'rele_4',      titulo:'Reserva' }
-];
-
-document.getElementById('mandos').innerHTML = ACTUADORES.map(a => `
-  <div class="mando">
-    <span>
-      <span class="nombre">${a.titulo}</span>
-      <span class="confirma" data-confirma="${a.clave}">sin confirmar</span>
-    </span>
-    <button class="interruptor" data-mando="${a.clave}" role="switch"
-            aria-checked="false" aria-label="${a.titulo}" disabled></button>
-  </div>
-`).join('');
-
-document.querySelectorAll('[data-mando]').forEach(boton => {
-  boton.addEventListener('click', async () => {
-    const clave = boton.dataset.mando;
-    const nuevo = boton.getAttribute('aria-checked') !== 'true';
-    boton.setAttribute('aria-checked', String(nuevo));  // respuesta inmediata
-    try {
-      await update(ref(db, 'cultivo/control'), { [clave]: nuevo });
-    } catch (e) {
-      boton.setAttribute('aria-checked', String(!nuevo));
-      mostrarAviso('No se pudo enviar la orden: ' + e.message);
-    }
-  });
-});
-
-// Lo que la web ha pedido
-onValue(ref(db, 'cultivo/control'), instantanea => {
-  const ordenes = instantanea.val() || {};
-  for (const a of ACTUADORES){
-    const boton = document.querySelector(`[data-mando="${a.clave}"]`);
-    boton.disabled = false;
-    if (document.activeElement !== boton){
-      boton.setAttribute('aria-checked', String(ordenes[a.clave] === true));
-    }
-  }
-});
-
+// Lecturas: públicas, se escuchan desde el arranque y sin sesión.
 onValue(ref(db, RUTA),
   instantanea => {
     const datos = instantanea.val();
@@ -294,15 +311,7 @@ onValue(ref(db, RUTA),
     }
     mostrarAviso('');
     pintar(datos);
-    // Lo que la placa dice que tiene puesto de verdad
-    for (const a of ACTUADORES){
-      const etiqueta = document.querySelector(`[data-confirma="${a.clave}"]`);
-      const real = datos.actuadores?.[a.clave];
-      etiqueta.textContent = real === undefined
-        ? 'sin confirmar'
-        : (real ? 'encendido en la placa' : 'apagado en la placa');
-      etiqueta.className = 'confirma' + (real ? ' si' : '');
-    }
+    pintarActuadores(datos);
     ultimoTs = datos.ts ?? Date.now();
     refrescarAntiguedad();
   },
@@ -311,6 +320,88 @@ onValue(ref(db, RUTA),
     mostrarAviso('La base rechazó la lectura: revisa las reglas de seguridad. ' + error.message);
   }
 );
+
+// ---------- Modo control ----------
+const acceso     = document.getElementById('acceso');
+const botonSesion = document.getElementById('sesion');
+const errorLogin = document.getElementById('errorLogin');
+let cortarControl = null;   // para dejar de escuchar al cerrar sesión
+
+function escucharControl(){
+  cortarControl = onValue(ref(db, 'cultivo/control'), instantanea => {
+    const ordenes = instantanea.val() || {};
+    for (const a of ACTUADORES){
+      const boton = document.querySelector(`[data-mando="${a.clave}"]`);
+      if (document.activeElement !== boton){
+        boton.setAttribute('aria-checked', String(ordenes[a.clave] === true));
+      }
+    }
+  });
+}
+
+onAuthStateChanged(auth, usuario => {
+  const admin = !!usuario;
+
+  document.querySelectorAll('[data-mando]').forEach(b => { b.hidden = !admin; });
+  document.getElementById('notaControl').textContent = admin
+    ? 'La placa aplica las órdenes en unos 5 segundos.'
+    : 'Estado informado por la placa. Entra para poder operarlos.';
+
+  botonSesion.textContent = admin ? 'Cerrar sesión' : 'Entrar';
+  acceso.hidden = true;
+
+  if (admin){
+    escucharControl();
+  } else if (cortarControl){
+    cortarControl();
+    cortarControl = null;
+  }
+});
+
+botonSesion.addEventListener('click', () => {
+  if (botonSesion.textContent === 'Cerrar sesión'){
+    signOut(auth);
+  } else {
+    acceso.hidden = !acceso.hidden;
+    if (!acceso.hidden) document.getElementById('correo').focus();
+  }
+});
+
+document.getElementById('entrar').addEventListener('click', async () => {
+  errorLogin.hidden = true;
+  try {
+    await signInWithEmailAndPassword(
+      auth,
+      document.getElementById('correo').value.trim(),
+      document.getElementById('clave').value
+    );
+    document.getElementById('clave').value = '';
+  } catch (e) {
+    errorLogin.hidden = false;
+    errorLogin.textContent = e.code === 'auth/invalid-credential'
+      ? 'Correo o contraseña incorrectos.'
+      : 'No se pudo entrar: ' + e.code;
+  }
+});
+
+document.getElementById('clave').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('entrar').click();
+});
+
+// ---------- Envío de órdenes ----------
+document.querySelectorAll('[data-mando]').forEach(boton => {
+  boton.addEventListener('click', async () => {
+    const clave = boton.dataset.mando;
+    const nuevo = boton.getAttribute('aria-checked') !== 'true';
+    boton.setAttribute('aria-checked', String(nuevo));
+    try {
+      await update(ref(db, 'cultivo/control'), { [clave]: nuevo });
+    } catch (e) {
+      boton.setAttribute('aria-checked', String(!nuevo));
+      mostrarAviso('No se pudo enviar la orden: ' + e.message);
+    }
+  });
+});
 </script>
 </body>
 </html>
