@@ -27,7 +27,7 @@
     line-height:1.55;
     padding:2rem 1.25rem 4rem;
   }
-  .envoltura{max-width:60rem;margin:0 auto}
+  .envoltura{max-width:72rem;margin:0 auto}
 
   header{
     display:flex;flex-wrap:wrap;gap:1rem;
@@ -47,13 +47,15 @@
   .lecturas{
     display:grid;gap:1px;background:var(--linea);
     border:1px solid var(--linea);margin:2rem 0;
-    grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));
+    grid-template-columns:repeat(4,1fr);
   }
-  .lectura{background:var(--panel);padding:1.5rem 1.4rem}
+  @media (max-width:64rem){ .lecturas{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:34rem){ .lecturas{grid-template-columns:1fr} }
+  .lectura{background:var(--panel);padding:1.4rem 1.2rem}
   .lectura h2{margin:0;font-size:.9rem;font-weight:500;color:var(--tenue)}
   .valor{
     font-family:'Space Grotesk',sans-serif;
-    font-size:3.4rem;font-weight:500;line-height:1;
+    font-size:2.9rem;font-weight:500;line-height:1;
     letter-spacing:-.03em;margin:.6rem 0 .1rem;
     font-variant-numeric:tabular-nums;
   }
@@ -72,7 +74,9 @@
   .control{border:1px solid var(--linea);padding:1.25rem 1.4rem;margin-bottom:2rem}
   .control h2{font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:500;margin:0 0 .3rem}
   .control .nota{color:var(--tenue);font-size:.85rem;margin:0 0 1rem}
-  .mandos{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr))}
+  .mandos{display:grid;gap:.75rem;grid-template-columns:repeat(4,1fr)}
+  @media (max-width:64rem){ .mandos{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:34rem){ .mandos{grid-template-columns:1fr} }
   .mando{
     display:flex;align-items:center;justify-content:space-between;gap:1rem;
     background:var(--panel);border:1px solid var(--linea);padding:.8rem 1rem;
@@ -179,7 +183,8 @@ const SIN_SENAL = 120000;
 const SENSORES = [
   { clave:'ph',   titulo:'pH',            unidad:'',      decimales:2, min:3,  max:9,   sanoMin:5.5, sanoMax:6.5 },
   { clave:'ec',   titulo:'Conductividad', unidad:'mS/cm', decimales:2, min:0,  max:3.5, sanoMin:1.2, sanoMax:2.2 },
-  { clave:'temp', titulo:'Temperatura',   unidad:'°C',    decimales:1, min:10, max:35,  sanoMin:18,  sanoMax:26 }
+  { clave:'temp', titulo:'Temperatura',   unidad:'°C',    decimales:1, min:10, max:35,  sanoMin:18,  sanoMax:26 },
+  { clave:'hum',  titulo:'Humedad',       unidad:'%',     decimales:0, min:0,  max:100, sanoMin:50,  sanoMax:70 }
 ];
 
 const ACTUADORES = [
